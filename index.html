@@ -1,0 +1,318 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<html>
+<head>
+<title>FitAI Elite</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- Mediapipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<style>
+body {margin:0;font-family:-apple-system;background:#0b0b0b;color:white;}
+canvas{position:fixed;width:100%;height:100%;}
+video{display:none;}
+
+.header{
+position:fixed;top:0;width:100%;
+padding:20px;font-size:22px;
+background:rgba(0,0,0,0.5);
+backdrop-filter:blur(12px);
+}
+
+.card{
+margin:15px;padding:20px;border-radius:20px;
+background:linear-gradient(135deg,#1e1e1e,#2a2a2a);
+}
+
+.home,.stats{padding-top:80px;padding-bottom:100px;}
+
+.counter{
+position:fixed;top:45%;left:50%;
+transform:translate(-50%,-50%);
+font-size:90px;
+}
+
+.status{
+position:fixed;top:80px;right:20px;
+padding:10px;border-radius:20px;
+}
+
+.nav{
+position:fixed;bottom:0;width:100%;
+display:flex;justify-content:space-around;
+padding:15px;
+background:rgba(0,0,0,0.6);
+backdrop-filter:blur(12px);
+}
+
+input,select,button{
+padding:10px;margin:5px;border-radius:10px;border:none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">FitAI Elite</div>
+
+<!-- LOGIN -->
+<div id="login" style="padding-top:100px;text-align:center;">
+<input id="email" placeholder="Email"><br>
+<input id="password" type="password" placeholder="Password"><br>
+<button onclick="signup()">Sign Up</button>
+<button onclick="loginUser()">Login</button>
+</div>
+
+<!-- HOME -->
+<div id="home" class="home" style="display:none;">
+<select onchange="changeVoice(this.value)">
+<option value="female">Female Voice</option>
+<option value="male">Male Voice</option>
+</select>
+
+<div class="card">💪 Curls <button onclick="startWorkout('curls')">Start</button></div>
+<div class="card">🏋️ Squats <button onclick="startWorkout('squats')">Start</button></div>
+<div class="card">🔥 Press <button onclick="startWorkout('press')">Start</button></div>
+<div class="card">🔥 Pushups <button onclick="startWorkout('pushups')">Start</button></div>
+<div class="card">🧗 Pullups <button onclick="startWorkout('pullups')">Start</button></div>
+</div>
+
+<div id="stats" class="stats" style="display:none;"></div>
+
+<div id="counter" class="counter" style="display:none;">0</div>
+<div id="status" class="status" style="display:none;">Ready</div>
+
+<video class="input_video"></video>
+<canvas class="output_canvas"></canvas>
+
+<div class="nav">
+<div onclick="showHome()">🏠</div>
+<div onclick="showStats()">📊</div>
+<div onclick="resetCounter()">🔄</div>
+</div>
+
+<script>
+// 🔥 FIREBASE CONFIG
+const firebaseConfig={
+apiKey:"YOUR_KEY",
+authDomain:"YOUR_PROJECT.firebaseapp.com",
+projectId:"YOUR_PROJECT_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth();
+const db=firebase.firestore();
+
+// AUTH
+function signup(){auth.createUserWithEmailAndPassword(email.value,password.value);}
+function loginUser(){auth.signInWithEmailAndPassword(email.value,password.value);}
+
+auth.onAuthStateChanged(user=>{
+if(user){
+login.style.display="none";
+home.style.display="block";
+}
+});
+
+// 🎤 VOICE SYSTEM
+let voices=[],selectedVoice,lastSpoken="",lastTime=0;
+
+function loadVoices(){
+voices=speechSynthesis.getVoices();
+selectedVoice=voices.find(v=>v.name.includes("Google"))||voices[0];
+}
+speechSynthesis.onvoiceschanged=loadVoices;
+
+function changeVoice(type){
+if(type==="male"){
+selectedVoice=voices.find(v=>v.name.toLowerCase().includes("male"))||voices[0];
+}else{
+selectedVoice=voices.find(v=>v.name.toLowerCase().includes("female"))||voices[0];
+}
+}
+
+function smartSpeak(text){
+const now=Date.now();
+if(text!==lastSpoken||now-lastTime>2500){
+const s=new SpeechSynthesisUtterance(text);
+s.voice=selectedVoice;
+speechSynthesis.speak(s);
+lastSpoken=text;
+lastTime=now;
+}
+}
+
+// 🎯 MOTIVATION
+const praise=["Nice","Good rep","Keep going","Perfect"];
+function motivate(){
+smartSpeak(praise[Math.floor(Math.random()*praise.length)]);
+}
+
+// ⏱️ TIMER
+let startTime,timerInterval;
+function startTimer(){
+startTime=Date.now();
+timerInterval=setInterval(()=>{
+let sec=Math.floor((Date.now()-startTime)/1000);
+status.innerText="Time "+sec+"s";
+},1000);
+}
+function stopTimer(){clearInterval(timerInterval);}
+
+// ⏱️ COUNTDOWN
+function startCountdown(cb){
+let c=3;
+let i=setInterval(()=>{
+smartSpeak(c.toString());
+status.innerText="Starting "+c;
+c--;
+if(c===0){
+clearInterval(i);
+smartSpeak("Go");
+cb();
+}
+},1000);
+}
+
+// 🧠 AI LOGIC
+const video=document.querySelector('.input_video');
+const canvas=document.querySelector('.output_canvas');
+const ctx=canvas.getContext('2d');
+
+let counter=0,stage="down",exercise=null,lastElbowX=null;
+
+function angle(a,b,c){
+let r=Math.atan2(c.y-b.y,c.x-b.x)-Math.atan2(a.y-b.y,a.x-b.x);
+let ang=Math.abs(r*180/Math.PI);
+if(ang>180) ang=360-ang;
+return ang;
+}
+
+function visible(lm){
+let v=0;[11,12,13,14,15,16].forEach(i=>{if(lm[i].visibility>0.6)v++;});
+return v/6>=0.75;
+}
+
+function straight(lm){
+return Math.abs(lm[12].x-lm[24].x)<0.1;
+}
+
+// UI
+function startWorkout(ex){
+exercise=ex;counter=0;
+home.style.display="none";
+stats.style.display="none";
+startCountdown(()=>{
+counterEl.style.display="block";
+status.style.display="block";
+startTimer();
+});
+}
+
+function showHome(){
+stopTimer();
+if(counter>0) saveWorkout();
+home.style.display="block";
+stats.style.display="none";
+counterEl.style.display="none";
+status.style.display="none";
+}
+
+async function showStats(){
+const u=auth.currentUser;if(!u)return;
+stats.innerHTML="<h2>History</h2>";
+const snap=await db.collection("workouts").where("uid","==",u.uid).get();
+snap.forEach(d=>{
+let w=d.data();
+stats.innerHTML+=`<div class="card">${w.exercise}<br>${w.reps}</div>`;
+});
+home.style.display="none";stats.style.display="block";
+}
+
+function resetCounter(){counter=0;counterEl.innerText=counter;}
+
+function saveWorkout(){
+const u=auth.currentUser;if(!u)return;
+db.collection("workouts").add({uid:u.uid,exercise,reps:counter,date:new Date()});
+}
+
+const counterEl=document.getElementById("counter");
+
+// MAIN LOOP
+function onResults(r){
+canvas.width=innerWidth;
+canvas.height=innerHeight;
+ctx.drawImage(r.image,0,0,innerWidth,innerHeight);
+
+if(r.poseLandmarks&&exercise){
+const lm=r.poseLandmarks;
+
+if(!visible(lm)){
+status.innerText="Step back";
+smartSpeak("Step back");
+return;
+}
+
+if(!straight(lm)){
+status.innerText="Straight back";
+smartSpeak("Straighten your back");
+return;
+}
+
+let ang;
+
+if(exercise==="curls"){
+ang=angle(lm[12],lm[14],lm[16]);
+if(ang>150) stage="down";
+if(ang<50&&stage==="down"){counter++;stage="up";motivate();}
+}
+
+if(exercise==="squats"){
+ang=angle(lm[24],lm[26],lm[28]);
+if(ang>160) stage="up";
+if(ang<90&&stage==="up"){counter++;stage="down";motivate();}
+}
+
+if(exercise==="press"){
+ang=angle(lm[12],lm[14],lm[16]);
+if(ang<90) stage="down";
+if(ang>160&&stage==="down"){counter++;stage="up";motivate();}
+}
+
+if(exercise==="pushups"){
+ang=angle(lm[12],lm[14],lm[16]);
+if(ang>160) stage="up";
+if(ang<90&&stage==="up"){counter++;stage="down";motivate();}
+}
+
+if(exercise==="pullups"){
+if(lm[16].y<lm[12].y) stage="up";
+if(lm[16].y>lm[12].y&&stage==="up"){counter++;stage="down";motivate();}
+}
+
+counterEl.innerText=counter;
+}
+}
+
+// INIT
+const pose=new Pose({locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`});
+pose.setOptions({modelComplexity:1});
+pose.onResults(onResults);
+
+const cam=new Camera(video,{
+onFrame:async()=>{await pose.send({image:video});},
+width:640,height:480
+});
+cam.start();
+</script>
+
+</body>
+</html>
